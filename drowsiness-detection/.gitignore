@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+.next/
+data/*
+!data/.gitkeep
+models/*
+!models/.gitkeep
+frontend/.env.local
