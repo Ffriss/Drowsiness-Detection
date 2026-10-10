@@ -45,7 +45,7 @@ data/       ข้อมูลที่เตรียมแล้ว และ�
 
 ## วิธีรัน
 
-ผมใช้ Windows + Python 3.11 ถ้าใช้ macOS/Linux ให้เปลี่ยนคำสั่ง activate ตามที่เขียนไว้
+ใช้ Windows + Python 3.11 ถ้าใช้ macOS/Linux ให้เปลี่ยนคำสั่ง activate ตามที่เขียนไว้
 
 ### 1. ติดตั้ง
 
@@ -67,7 +67,7 @@ python ml/prepare_mrl.py --root path/to/mrl-eye-dataset --out data/mrl
 
 ### 3. เทรนโมเดล
 
-ผมเทรนบน Google Colab (GPU T4) เพราะบน CPU ช้ามาก
+ได้ทำการเทรนบน Google Colab (GPU T4) เพราะบน CPU ช้ามาก
 
 ```
 python ml/train.py --data data/mrl                        # เทรนทั้ง 3 ตัว
