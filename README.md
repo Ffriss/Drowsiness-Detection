@@ -1,86 +1,124 @@
-# Driver Drowsiness Detection System Using Deep Learning-Based Eye State Classification
+# ระบบตรวจจับการหลับในและการละสายตาจากถนน
 
-ระบบตรวจจับการหลับในจากกล้อง webcam: จำแนก **ตาเปิด / ตาปิด** ด้วย CNN แล้วตัดสินสถานะจาก **ระยะเวลาที่ตาปิด**
-(ปิด 1–2 วินาที = Warning, เกิน 2 วินาที = Danger, ตาเปิด = Normal และรีเซ็ตตัวจับเวลา)
+Mini Project วิชา 240-318 AI & ML
 
-เลือกใช้ได้ 3 โมเดลบน dataset และ split เดียวกัน: **Custom CNN / MobileNetV2 / ResNet50**
-ค่า metrics ทั้งหมดในหน้า Dashboard มาจากการวัดบน test set จริงเท่านั้น (ไม่มีตัวเลขสมมติ)
+ระบบนี้ใช้กล้อง Webcam ของโน้ตบุ๊กตรวจดูผู้ขับขี่ 2 เรื่อง
 
-## โครงสร้าง
+- **หลับใน** ใช้ CNN ดูว่าตาเปิดหรือปิด แล้วนับเวลาที่ตาปิดต่อเนื่อง
+- **ละสายตาจากถนน** ใช้ MediaPipe Face Mesh หาจุดบนใบหน้า แล้วคำนวณว่าหันหน้าไปกี่องศา
+
+ถ้าตาปิดหรือหันหน้านานเกินที่ตั้งไว้ ระบบจะเตือนบนหน้าเว็บ และส่งเสียงเมื่อถึงระดับอันตราย
+
+ผมเทรนไว้ 3 โมเดลเพื่อเปรียบเทียบ คือ CNN ที่ออกแบบเอง, MobileNetV2 และ ResNet50 ทั้งหมดใช้ข้อมูลชุดเดียวกัน สุดท้ายเลือก CNN เป็นตัวหลัก เพราะแม่นพอ ๆ กับ ResNet50 แต่ไฟล์เล็กกว่ามากและทำงานได้เร็วกว่า
+
+## ผลที่ได้
+
+วัดบน test set 12,590 ภาพ จาก 5 คนที่โมเดลไม่เคยเห็นตอนเทรน
+
+| โมเดล | F1 | ขนาดไฟล์ | เวลาต่อภาพ (GPU) |
+|---|---|---|---|
+| CNN | 98.68% | 3.7 MB | 22 ms |
+| MobileNetV2 | 95.02% | 21.7 MB | 157 ms |
+| ResNet50 | 98.67% | 210 MB | 211 ms |
+
+threshold ของแต่ละโมเดลเลือกจาก validation set (ค่าที่ให้ F1 สูงสุด)
+
+## เงื่อนไขการเตือน
+
+| สถานะ | ตาปิดต่อเนื่อง | หันหน้าเกิน ±30° ต่อเนื่อง |
+|---|---|---|
+| ปกติ | ไม่ถึง 1 วินาที | ไม่ถึง 2 วินาที |
+| เตือน | 1 วินาทีขึ้นไป | 2 วินาทีขึ้นไป |
+| อันตราย (มีเสียง) | เกิน 2 วินาที | เกิน 4 วินาที |
+
+ต้องหันกลับมาไม่เกิน ±20° สถานะถึงจะกลับเป็นปกติ ค่าพวกนี้ปรับได้จากหน้าเว็บ
+
+## โฟลเดอร์ในโปรเจกต์
 
 ```
-ml/         เตรียมข้อมูล เทรน วัดผล (TensorFlow/Keras)
-backend/    FastAPI + MediaPipe + SQLite
-frontend/   Next.js + Tailwind + Recharts + Lucide
-models/     ไฟล์โมเดล (.keras) และ metrics (.json) ที่ได้จากการเทรน
-data/       dataset ที่เตรียมแล้ว และฐานข้อมูล SQLite
+ml/         เตรียมข้อมูล เทรน และวัดผลโมเดล (TensorFlow/Keras)
+backend/    API ด้วย FastAPI + MediaPipe + SQLite
+frontend/   หน้าเว็บ Next.js + Tailwind + Recharts
+models/     ไฟล์โมเดล (.keras) กับผลวัด (_metrics.json)
+data/       ข้อมูลที่เตรียมแล้ว และไฟล์ฐานข้อมูล
 ```
 
-## ขั้นตอน
+## วิธีรัน
 
-### 0) ติดตั้ง (Python 3.10 หรือ 3.11)
-```bash
-python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
+ผมใช้ Windows + Python 3.11 ถ้าใช้ macOS/Linux ให้เปลี่ยนคำสั่ง activate ตามที่เขียนไว้
+
+### 1. ติดตั้ง
+
+```
+python -m venv .venv
+.venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 1) ดาวน์โหลด MRL Eye Dataset แล้วเตรียมข้อมูล
-- ต้นทาง: https://mrl.cs.vsb.cz/eyedataset.html
-- Kaggle: https://www.kaggle.com/datasets/imadeddinedjerarda/mrl-eye-dataset
+### 2. เตรียมข้อมูล
 
-```bash
+ดาวน์โหลด MRL Eye Dataset จาก https://mrl.cs.vsb.cz/eyedataset.html (หรือบน Kaggle ก็มี) แล้วรัน
+
+```
 python ml/prepare_mrl.py --root path/to/mrl-eye-dataset --out data/mrl
 ```
-แบ่ง train/val/test = 70/15/15 **ตามตัวบุคคล** (กัน data leakage) ดูสรุปที่ `data/mrl/split_summary.json`
 
-### 2) เทรนโมเดล
-```bash
-python ml/train.py --data data/mrl                        # ทั้ง 3 ตัว
-python ml/train.py --data data/mrl --models custom_cnn    # ตัวเดียว
-python ml/train.py --weights none                         # ไม่ดาวน์โหลด ImageNet weights
+สคริปต์จะแบ่ง train/val/test ประมาณ 70/15/15 โดยแบ่งตามคน ไม่ใช่สุ่มภาพ จะได้ไม่มีคนเดียวกันอยู่ทั้งในชุดเทรนและชุดทดสอบ
+
+### 3. เทรนโมเดล
+
+ผมเทรนบน Google Colab (GPU T4) เพราะบน CPU ช้ามาก
+
 ```
-ได้ `models/<name>.keras` และ `models/<name>_metrics.json` (accuracy, precision, recall, F1, AUC,
-confusion matrix, กราฟ loss/accuracy, เวลาต่อภาพ, จำนวนพารามิเตอร์, threshold ที่เลือกจาก validation)
-แนะนำให้ใช้ GPU สำหรับ MobileNetV2/ResNet50
-
-### 3) (แนะนำ) วัดผลกับ webcam จริง เพื่อดู domain gap
-MRL เป็นภาพ IR แต่งานจริงเป็นภาพสีจาก webcam ผลบน test set ของ MRL อาจดีกว่าการใช้งานจริง
-```bash
-python ml/collect_webcam.py --person me     # o = บันทึกตาเปิด, c = บันทึกตาปิด, q = ออก
-python ml/preview_compare.py                # ดูภาพ MRL เทียบ webcam หลัง preprocess (preview_compare.png)
-python ml/evaluate_folder.py                # วัดผลทั้ง 3 โมเดลบนภาพ webcam
-```
-เก็บอย่างละ 100–200 ภาพ ต่อคน หลายแสง/ใส่-ไม่ใส่แว่น และ **ห้ามนำไปเทรน** ใช้เป็น test set แยกเท่านั้น
-ถ้าผลต่ำกว่า MRL test มาก ให้ลองปรับ `margin` ใน `ml/eyecrop.py` หรือเพิ่ม augmentation / ผสม dataset CEW
-
-### 4) รัน backend
-```bash
-uvicorn backend.main:app --reload --port 8000
+python ml/train.py --data data/mrl                        # เทรนทั้ง 3 ตัว
+python ml/train.py --data data/mrl --models custom_cnn    # เทรนแค่ CNN
 ```
 
-### 5) รัน frontend (Node.js 18+)
-```bash
+เทรนเสร็จจะได้ `models/<ชื่อ>.keras` กับ `models/<ชื่อ>_metrics.json`
+
+ถ้าอยากเปลี่ยน threshold ทีหลัง ใช้ `ml/set_threshold.py` (ดูวิธีใช้ในไฟล์)
+
+### 4. รัน backend
+
+รันจากโฟลเดอร์หลักของโปรเจกต์ และต้อง activate venv ก่อน
+
+```
+python -m uvicorn backend.main:app --reload --port 8000
+```
+
+### 5. รันหน้าเว็บ (ต้องมี Node.js 18 ขึ้นไป)
+
+เปิด terminal อีกหน้าต่าง
+
+```
 cd frontend
-cp .env.local.example .env.local
 npm install
-npm run dev          # เปิด http://localhost:3000
+npm run dev
 ```
-หน้าที่มี: **Dashboard** (กล้องสด เลือกโมเดล สถานะ กราฟ P(closed)), **เปรียบเทียบโมเดล**,
-**รายละเอียดแต่ละโมเดล** (confusion matrix, กราฟการเทรน), **ประวัติ** (SQLite)
 
-## หลักการทำงาน
+แล้วเปิด http://localhost:3000
 
-1. เบราว์เซอร์ส่งเฟรม ~10 FPS ไป `POST /api/predict`
-2. MediaPipe Face Mesh หาตาซ้าย/ขวา -> ตัด ROI -> `ml/preprocess.py` (grayscale + CLAHE + 64x64)
-3. โมเดลคืน P(closed) ของแต่ละตา -> เฉลี่ย
-4. `backend/state.py`: majority vote 5 เฟรม -> กฎเวลา (Normal/Warning/Danger) | ไม่พบใบหน้า = NoFace (ไม่นับเป็นตาปิด)
-5. บันทึกเหตุการณ์ Warning/Danger ลง SQLite
+หน้าเว็บมี Dashboard (กล้องสด, สถานะ, กราฟ, ภาพตาที่โมเดลเห็น, ตั้งค่าการเตือน), หน้าเปรียบเทียบโมเดล, หน้ารายละเอียดแต่ละโมเดล และหน้าประวัติการแจ้งเตือน
 
-ฟังก์ชัน preprocess เป็นไฟล์เดียวกันทั้งตอนเทรนและตอนใช้งานจริง ห้ามแยกเขียนสองที่
+## ระบบทำงานยังไง
 
-## หมายเหตุ
+1. หน้าเว็บส่งภาพจากกล้องไปที่ backend
+2. MediaPipe Face Mesh หาจุดบนใบหน้า 468 จุด
+3. ใช้จุดสองฝั่งใบหน้าคำนวณมุมหันศีรษะ และใช้จุดรอบตาตัดภาพตาซ้าย–ขวา
+4. ภาพตาถูกแปลงเป็นขาวดำ ปรับแสงด้วย CLAHE แล้วย่อเป็น 64×64 (ใช้ฟังก์ชันเดียวกับตอนเทรน)
+5. CNN ให้ค่าความน่าจะเป็นที่ตาปิด แล้วตัดสินแบบเสียงข้างมาก 3 ใน 5 เฟรม
+6. นับเวลาตาปิดหรือหันหน้าต่อเนื่อง แล้วเทียบกับเงื่อนไขการเตือน
+7. ถ้าเป็นเตือนหรืออันตราย จะบันทึกลง SQLite
 
-- โปรเจกต์นี้เป็นต้นแบบเพื่อการเรียน ไม่ใช่ระบบความปลอดภัยสำหรับขับขี่จริง
-- กล้อง: เบราว์เซอร์อนุญาตให้ใช้กล้องเฉพาะ `localhost` หรือ HTTPS
-- CEW (ถ้าจะผสม): https://parnec.nuaa.edu.cn/_upload/tpl/02/db/731/template731/pages/xtan/ClosedEyeDatabases.html
-  ใช้เพื่อการวิจัยเท่านั้น (ห้ามใช้เชิงพาณิชย์)
+## ข้อจำกัด
+
+- ข้อมูลที่ใช้เทรนเป็นภาพอินฟราเรด แต่ใช้งานจริงกับ Webcam ธรรมดา ห้องที่แสงน้อยหรือแสงจ้าเกินไปจะทำให้ผลแกว่ง
+- ยังไม่ได้วัดความแม่นยำกับภาพ Webcam จริงเป็นตัวเลข
+- ตรวจแค่การหันซ้าย–ขวา ยังไม่ได้ตรวจการก้มหน้า
+- เป็นงานต้นแบบสำหรับเรียน ไม่ได้ทำมาใช้ในรถจริง
+
+เบราว์เซอร์จะยอมให้ใช้กล้องเฉพาะตอนเปิดผ่าน `localhost` หรือ HTTPS เท่านั้น
+
+## ผู้จัดทำ
+
+ฟาริซ มะลี (6710110302)
